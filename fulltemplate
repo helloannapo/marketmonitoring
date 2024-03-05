@@ -1,0 +1,134 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import datetime
+
+# JP Morgan scraping function
+def scrape_jp_morgan_news():
+    base_url = "https://www.jpmorganchase.com"
+    news_url = base_url + "/news-stories/news"
+    news_data = []
+
+    response = requests.get(news_url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    articles = soup.find_all('h3', {'data-json-key': 'title'})
+    for article in articles:
+        headline = article.get_text(strip=True)
+        link_tag = article.find_next('div', class_='callout').find('a', {'data-json-key': 'href'})
+        date_tag = article.find_next('div', class_='date').find('span')
+        
+        if link_tag and date_tag:
+            news_link = link_tag['href']
+            date = date_tag.get_text(strip=True)
+            content = get_news_content(base_url + news_link)
+            if content:
+                news_data.append({'Keyword': 'JP Morgan', 'Date': date, 'Headline': headline, 'Content': content, 'Source': base_url + news_link})
+
+    return news_data
+
+def get_news_content(article_url):
+    try:
+        response = requests.get(article_url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        content = soup.find('div', class_='article__body__text').get_text(strip=True)
+        return content
+    except Exception as e:
+        print(f"Error processing article at {article_url}: {e}")
+        return None
+
+# Morgan Stanley scraping function
+def scrape_morgan_stanley_news():
+    base_url = "https://www.morganstanley.com"
+    news_url = base_url + "/im/en-us/capital-seeker/about-us/news-and-insights.html"
+    news_data = []
+
+    response = requests.get(news_url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    articles = soup.select('#latestInsights h4 a')
+    for article in articles:
+        headline = article.get_text(strip=True)
+        news_link = article['href']
+        date_tag = article.find_previous('span', class_='pressCenterDate')
+        
+        if date_tag:
+            date = date_tag.get_text(strip=True)
+            content = get_news_content(base_url + news_link)
+            if content:
+                news_data.append({'Keyword': 'Morgan Stanley', 'Date': date, 'Headline': headline, 'Content': content, 'Source': base_url + news_link})
+
+    return news_data
+
+# Goldman Sachs scraping function
+def scrape_goldman_sachs_news():
+    base_url = "https://www.goldmansachs.com"
+    news_url = base_url + "/media-relations/press-releases-and-comments/current/index.html"
+    news_data = []
+
+    response = requests.get(news_url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    articles = soup.select('#blogArticles > section > a')
+    for article in articles:
+        headline_tag = article.find('h4')
+        date_tag = article.find_previous('time')
+        
+        if headline_tag and date_tag:
+            headline = headline_tag.get_text(strip=True)
+            news_link = article['href']
+            date = date_tag.get_text(strip=True)
+            content = get_news_content(news_link)
+            if content:
+                news_data.append({'Keyword': 'Goldman Sachs', 'Date': date, 'Headline': headline, 'Content': content, 'Source': news_link})
+
+    return news_data
+
+# News API scraping function
+def fetch_news_from_api(api_key, keywords):
+    query = ' OR '.join(keywords)
+    url = 'https://newsapi.org/v2/everything'
+    parameters = {
+        'q': query,
+        'pageSize': 20,
+        'apiKey': api_key
+    }
+
+    news_data = []
+    try:
+        response = requests.get(url, params=parameters)
+        response.raise_for_status()
+        data = response.json()
+        for article in data['articles']:
+            news_data.append({
+                'Keyword': 'Banking News', 
+                'Date': article['publishedAt'], 
+                'Headline': article['title'], 
+                'Content': article['description'] or article['content'], 
+                'Source': article['url']
+            })
+        return news_data
+    except requests.RequestException as e:
+        print(f"Error while fetching news from API: {e}")
+        return news_data
+
+def save_to_csv(data, filename):
+    df = pd.DataFrame(data)
+    df['Date'] = pd.to_datetime(df['Date'])
+    df.sort_values(by='Date', ascending=False, inplace=True)
+    df.to_csv(filename, index=False)
+
+def run_scraping_tasks():
+    api_key = '33539a1f1518454fb3e42abb11c372d4' 
+    keywords = ['bank', 'Revolut', 'neobank', 'blockchain']
+
+    jp_morgan_news = scrape_jp_morgan_news()
+    morgan_stanley_news = scrape_morgan_stanley_news()
+    goldman_sachs_news = scrape_goldman_sachs_news()
+    news_api_news = fetch_news_from_api(api_key, keywords)
+
+    combined_news = jp_morgan_news + morgan_stanley_news + goldman_sachs_news + news_api_news
+    save_to_csv(combined_news, 'combined_news_data.csv')
+
+run_scraping_tasks()
+
